@@ -691,6 +691,7 @@ def cleanup_image_cache(max_age_hours: int = 24) -> int:
 # ---------------------------------------------------------------------------
 
 AUDIO_CACHE_DIR = get_hermes_dir("cache/audio", "audio_cache")
+DEFAULT_TELEGRAM_ASSET_EXPORT_DIR = Path("/home/paperclip/shared/TELEGRAM_ASSETS")
 
 
 def get_audio_cache_dir() -> Path:
@@ -725,9 +726,8 @@ def get_telegram_asset_export_dir() -> Path | None:
         dest.mkdir(parents=True, exist_ok=True)
         return dest
 
-    default_shared = Path("/home/paperclip/shared/TELEGRAM_ASSETS")
-    if default_shared.exists():
-        default_shared.mkdir(parents=True, exist_ok=True)
+    default_shared = DEFAULT_TELEGRAM_ASSET_EXPORT_DIR.expanduser()
+    if default_shared.exists() or default_shared.is_symlink() or default_shared.parent.exists():
         return default_shared
     return None
 
