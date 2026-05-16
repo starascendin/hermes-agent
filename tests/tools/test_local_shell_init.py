@@ -13,10 +13,21 @@ import pytest
 
 from tools.environments.local import (
     LocalEnvironment,
+    _find_bash,
     _prepend_shell_init,
     _read_terminal_shell_init_config,
     _resolve_shell_init_files,
 )
+
+
+class TestFindBash:
+    def test_prefers_configured_login_shell_when_it_exists(self, tmp_path, monkeypatch):
+        zsh = tmp_path / "zsh"
+        zsh.write_text("#!/bin/sh\n")
+        zsh.chmod(0o755)
+        monkeypatch.setenv("SHELL", str(zsh))
+
+        assert _find_bash() == str(zsh)
 
 
 class TestResolveShellInitFiles:
