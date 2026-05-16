@@ -144,12 +144,15 @@ def adapter():
 
 @pytest.fixture(autouse=True)
 def _redirect_cache(tmp_path, monkeypatch):
-    """Point document/video cache to tmp_path so tests don't touch ~/.hermes."""
+    """Point document/video/audio cache to tmp_path so tests don't touch ~/.hermes."""
     monkeypatch.setattr(
         "gateway.platforms.base.DOCUMENT_CACHE_DIR", tmp_path / "doc_cache"
     )
     monkeypatch.setattr(
         "gateway.platforms.base.VIDEO_CACHE_DIR", tmp_path / "video_cache"
+    )
+    monkeypatch.setattr(
+        "gateway.platforms.base.AUDIO_CACHE_DIR", tmp_path / "audio_cache"
     )
 
 
@@ -186,6 +189,12 @@ def _make_photo(file_obj=None):
     photo = MagicMock()
     photo.get_file = AsyncMock(return_value=file_obj or _make_file_obj(b"photo-bytes"))
     return photo
+
+
+def _make_voice(file_obj=None):
+    voice = MagicMock()
+    voice.get_file = AsyncMock(return_value=file_obj or _make_file_obj(b"voice-bytes"))
+    return voice
 
 
 class TestDocumentDownloadBlock:
@@ -261,6 +270,26 @@ class TestDocumentDownloadBlock:
         event = adapter.handle_message.call_args[0][0]
         assert event.media_urls and event.media_urls[0].endswith("archive.zip")
         assert event.media_types == ["application/zip"]
+
+    @pytest.mark.asyncio
+    async def test_voice_message_exports_audio_to_shared_dir(self, adapter, tmp_path, monkeypatch):
+        export_dir = tmp_path / "shared_assets"
+        monkeypatch.setenv("HERMES_TELEGRAM_ASSET_EXPORT_DIR", str(export_dir))
+
+        voice_bytes = b"voice-export-test"
+        file_obj = _make_file_obj(voice_bytes)
+        msg = _make_message()
+        msg.voice = _make_voice(file_obj)
+        update = _make_update(msg)
+
+        await adapter._handle_media_message(update, MagicMock())
+
+        event = adapter.handle_message.call_args[0][0]
+        assert event.media_types == ["audio/ogg"]
+        assert event.media_urls and os.path.exists(event.media_urls[0])
+        exported = export_dir / os.path.basename(event.media_urls[0])
+        assert exported.exists()
+        assert exported.read_bytes() == voice_bytes
 
     @pytest.mark.asyncio
     async def test_png_document_is_routed_as_image(self, adapter):

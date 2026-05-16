@@ -73,6 +73,7 @@ from gateway.platforms.base import (
     cache_audio_from_bytes,
     cache_video_from_bytes,
     cache_document_from_bytes,
+    export_telegram_audio_asset,
     resolve_proxy_url,
     SUPPORTED_VIDEO_TYPES,
     SUPPORTED_DOCUMENT_TYPES,
@@ -4825,7 +4826,12 @@ class TelegramAdapter(BasePlatformAdapter):
                 cached_path = cache_audio_from_bytes(bytes(audio_bytes), ext=".ogg")
                 event.media_urls = [cached_path]
                 event.media_types = ["audio/ogg"]
-                logger.info("[Telegram] Cached user voice at %s", cached_path)
+                exported_path = export_telegram_audio_asset(cached_path)
+                logger.info(
+                    "[Telegram] Cached user voice at %s%s",
+                    cached_path,
+                    f" (exported to {exported_path})" if exported_path else "",
+                )
             except Exception as e:
                 logger.warning("[Telegram] Failed to cache voice: %s", e, exc_info=True)
         elif msg.audio:

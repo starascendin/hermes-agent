@@ -1,5 +1,6 @@
 """Gateway STT config tests — honor stt.enabled: false from config.yaml."""
 
+import json
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -140,3 +141,50 @@ async def test_prepare_inbound_message_text_transcribes_queued_voice_event():
     assert result is not None
     assert "queued voice transcript" in result
     assert "voice message" in result.lower()
+
+
+@pytest.mark.asyncio
+async def test_enrich_message_with_transcription_writes_telegram_sidecars(tmp_path, monkeypatch):
+    from gateway.run import GatewayRunner
+
+    runner = GatewayRunner.__new__(GatewayRunner)
+    runner.config = GatewayConfig(stt_enabled=True)
+    runner._has_setup_skill = lambda: False
+
+    export_dir = tmp_path / "telegram_assets"
+    monkeypatch.setenv("HERMES_TELEGRAM_ASSET_EXPORT_DIR", str(export_dir))
+
+    audio_path = tmp_path / "voice.ogg"
+    audio_path.write_bytes(b"fake-audio")
+    source = SessionSource(
+        platform=Platform.TELEGRAM,
+        chat_id="123",
+        chat_type="dm",
+    )
+
+    with patch(
+        "tools.transcription_tools.transcribe_audio",
+        return_value={
+            "success": True,
+            "transcript": "saved transcript",
+            "provider": "local_command",
+        },
+    ):
+        result = await runner._enrich_message_with_transcription(
+            "caption",
+            [str(audio_path)],
+            source=source,
+        )
+
+    exported_audio = export_dir / audio_path.name
+    transcript_txt = export_dir / f"{audio_path.name}.transcript.txt"
+    transcript_json = export_dir / f"{audio_path.name}.transcript.json"
+
+    assert "saved transcript" in result
+    assert exported_audio.exists()
+    assert transcript_txt.read_text(encoding="utf-8") == "saved transcript"
+    payload = json.loads(transcript_json.read_text(encoding="utf-8"))
+    assert payload["audio_path"] == str(exported_audio)
+    assert payload["source_audio_path"] == str(audio_path)
+    assert payload["transcript"] == "saved transcript"
+    assert payload["provider"] == "local_command"

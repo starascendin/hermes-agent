@@ -8,15 +8,19 @@ and implement the required methods.
 import asyncio
 import inspect
 import ipaddress
+import json
 import logging
 import os
 import random
 import re
+import shutil
 import socket as _socket
 import subprocess
 import sys
 import uuid
 from abc import ABC, abstractmethod
+from datetime import datetime, timezone
+from pathlib import Path
 from urllib.parse import urlsplit
 
 from utils import normalize_proxy_url
@@ -711,6 +715,76 @@ def cache_audio_from_bytes(data: bytes, ext: str = ".ogg") -> str:
     filepath = cache_dir / filename
     filepath.write_bytes(data)
     return str(filepath)
+
+
+def get_telegram_asset_export_dir() -> Path | None:
+    """Return the configured Telegram asset export directory, if enabled."""
+    configured = os.environ.get("HERMES_TELEGRAM_ASSET_EXPORT_DIR", "").strip()
+    if configured:
+        dest = Path(configured).expanduser()
+        dest.mkdir(parents=True, exist_ok=True)
+        return dest
+
+    default_shared = Path("/home/paperclip/shared/TELEGRAM_ASSETS")
+    if default_shared.exists():
+        default_shared.mkdir(parents=True, exist_ok=True)
+        return default_shared
+    return None
+
+
+def export_telegram_audio_asset(source_audio_path: str) -> str | None:
+    """Mirror a cached Telegram audio asset into the shared export directory."""
+    export_dir = get_telegram_asset_export_dir()
+    if export_dir is None:
+        return None
+
+    source = Path(source_audio_path).expanduser()
+    if not source.exists() or not source.is_file():
+        return None
+
+    destination = export_dir / source.name
+    if source.resolve() == destination.resolve():
+        return str(destination)
+
+    shutil.copy2(source, destination)
+    return str(destination)
+
+
+def write_telegram_audio_transcript_sidecar(
+    source_audio_path: str,
+    transcript: str,
+    *,
+    provider: str | None = None,
+) -> dict[str, str] | None:
+    """Persist transcript sidecars next to an exported Telegram audio asset."""
+    exported_audio = export_telegram_audio_asset(source_audio_path)
+    if not exported_audio:
+        return None
+
+    audio_path = Path(exported_audio)
+    stem = audio_path.name
+    text_path = audio_path.with_name(f"{stem}.transcript.txt")
+    json_path = audio_path.with_name(f"{stem}.transcript.json")
+    text_path.write_text(transcript or "", encoding="utf-8")
+    json_path.write_text(
+        json.dumps(
+            {
+                "audio_path": str(audio_path),
+                "source_audio_path": str(Path(source_audio_path).expanduser()),
+                "transcript": transcript or "",
+                "provider": provider,
+                "saved_at": datetime.now(timezone.utc).isoformat(),
+            },
+            ensure_ascii=False,
+            indent=2,
+        ) + "\n",
+        encoding="utf-8",
+    )
+    return {
+        "audio_path": str(audio_path),
+        "text_path": str(text_path),
+        "json_path": str(json_path),
+    }
 
 
 async def cache_audio_from_url(url: str, ext: str = ".ogg", retries: int = 2) -> str:

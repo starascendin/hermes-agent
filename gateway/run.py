@@ -785,6 +785,7 @@ from gateway.platforms.base import (
     MessageType,
     _reply_anchor_for_event,
     merge_pending_message_event,
+    write_telegram_audio_transcript_sidecar,
 )
 from gateway.restart import (
     DEFAULT_GATEWAY_RESTART_DRAIN_TIMEOUT,
@@ -7606,6 +7607,7 @@ class GatewayRunner:
                 message_text = await self._enrich_message_with_transcription(
                     message_text,
                     audio_paths,
+                    source=source,
                 )
                 _stt_fail_markers = (
                     "No STT provider",
@@ -14224,6 +14226,7 @@ class GatewayRunner:
         self,
         user_text: str,
         audio_paths: List[str],
+        source=None,
     ) -> str:
         """
         Auto-transcribe user voice/audio messages using the configured STT provider
@@ -14266,6 +14269,19 @@ class GatewayRunner:
                 result = await asyncio.to_thread(transcribe_audio, path)
                 if result["success"]:
                     transcript = result["transcript"]
+                    if getattr(getattr(source, "platform", None), "value", getattr(source, "platform", None)) == "telegram":
+                        try:
+                            write_telegram_audio_transcript_sidecar(
+                                path,
+                                transcript,
+                                provider=result.get("provider"),
+                            )
+                        except Exception:
+                            logger.warning(
+                                "Failed to export Telegram transcript sidecar for %s",
+                                path,
+                                exc_info=True,
+                            )
                     enriched_parts.append(
                         f'[The user sent a voice message~ '
                         f'Here\'s what they said: "{transcript}"]'
