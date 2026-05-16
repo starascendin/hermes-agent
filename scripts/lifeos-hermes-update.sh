@@ -7,6 +7,7 @@ FORK_REMOTE="${HERMES_LIFEOS_FORK_REMOTE:-origin}"
 UPSTREAM_REMOTE="${HERMES_UPSTREAM_REMOTE:-upstream}"
 UPSTREAM_URL="${HERMES_UPSTREAM_URL:-https://github.com/NousResearch/hermes-agent.git}"
 FORK_URL="${HERMES_LIFEOS_FORK_URL:-https://github.com/starascendin/hermes-agent.git}"
+REFERENCE_CLONE="${HERMES_REFERENCE_CLONE:-$HOME/src/hermes-agent}"
 
 cd "$REPO"
 
@@ -50,6 +51,20 @@ git rebase "$UPSTREAM_REMOTE/main"
 
 echo "==> Pushing rebased LifeOS main to fork"
 git push --force-with-lease "$FORK_REMOTE" main
+
+echo "==> Refreshing reference clone: $REFERENCE_CLONE"
+mkdir -p "$(dirname "$REFERENCE_CLONE")"
+if [ ! -d "$REFERENCE_CLONE/.git" ]; then
+  git clone "$FORK_URL" "$REFERENCE_CLONE"
+fi
+git -C "$REFERENCE_CLONE" remote set-url origin "$FORK_URL"
+if git -C "$REFERENCE_CLONE" remote get-url upstream >/dev/null 2>&1; then
+  git -C "$REFERENCE_CLONE" remote set-url upstream "$UPSTREAM_URL"
+else
+  git -C "$REFERENCE_CLONE" remote add upstream "$UPSTREAM_URL"
+fi
+git -C "$REFERENCE_CLONE" fetch origin main
+git -C "$REFERENCE_CLONE" reset --hard origin/main
 
 was_active=0
 if systemctl --user is-active --quiet "$SERVICE"; then
